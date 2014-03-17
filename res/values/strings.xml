@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">GpsExample</string>
+    <string name="startServiceButton">Start Service</string>
+    <string name="stopServiceButton">Stop Service</string>
+
+</resources>
