@@ -119,6 +119,7 @@ public class GpsService extends Service implements LocationListener {
 	}
 	
 	private boolean isLocationGoodEnough(Location location) {
+		//Just a first approach, definitely needs more thought.
 		if (location.getProvider().contentEquals(LocationManager.GPS_PROVIDER) ||
 			location.getProvider().contentEquals("fused")) {
 			if (location.getAccuracy() < ACCEPTABLE_ACCURACY_METERS) {
