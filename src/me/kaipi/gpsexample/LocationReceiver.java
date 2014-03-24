@@ -13,6 +13,7 @@ public class LocationReceiver extends BroadcastReceiver {
 	public void onReceive(Context context, Intent intent) {
 		Location location = intent.getParcelableExtra("location");
 		Log.d(TAG, "Location received: " + location.getTime());
+		Log.d(TAG, "Thread id: " + Thread.currentThread().getId());
 	}
 
 }

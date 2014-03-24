@@ -9,6 +9,10 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context=".MainActivity" >
     
+    <TextView android:id="@+id/serviceText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+    
     <Button
         android:id="@+id/startServiceButton"
         android:layout_width="match_parent"

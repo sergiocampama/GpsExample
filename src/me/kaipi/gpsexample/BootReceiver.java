@@ -9,6 +9,7 @@ public class BootReceiver extends BroadcastReceiver {
 	@Override
 	public void onReceive(Context context, Intent intent) {
 		Intent serviceIntent = new Intent(context, GpsService.class);
+		serviceIntent.putExtra(GpsService.BROADCAST_INTERVAL, GpsService.BROADCAST_INTERVAL_DEFAULT);
 		context.startService(serviceIntent);
 	}
 	

@@ -4,5 +4,8 @@
     <string name="app_name">GpsExample</string>
     <string name="startServiceButton">Start Service</string>
     <string name="stopServiceButton">Stop Service</string>
+    <string name="serviceRunning">The service is running.</string>
+    <string name="serviceNotRunning">The service is not running.</string>
+    <string name="gpsServiceStartError">Check that android.permission.ACCESS_FINE_LOCATION or android.permission.ACCESS_COARSE_LOCATION are in the manifest and that Google Play Services is enabled.</string>
 
 </resources>

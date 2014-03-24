@@ -1,34 +1,33 @@
 package me.kaipi.gpsexample;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.TimeZone;
-import java.util.Timer;
-import java.util.TimerTask;
-
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.location.Criteria;
 import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.os.Bundle;
-import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 
-public class GpsService extends Service implements LocationListener {
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesClient.ConnectionCallbacks;
+import com.google.android.gms.common.GooglePlayServicesClient.OnConnectionFailedListener;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.location.LocationClient;
+import com.google.android.gms.location.LocationListener;
+import com.google.android.gms.location.LocationRequest;
 
+public class GpsService extends Service implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener {
+
+	public static final String LOCATION_BROADCAST_ACTION = "me.kaipi.gpsexample.LocationBroadcast";
+	public static final String LOCATION_EXTRA = "location";
+	public static final String BROADCAST_INTERVAL = "broadcast_interval";
+	public static final Integer BROADCAST_INTERVAL_DEFAULT = 5;
+	
 	private static final String TAG = "GpsService";
-	final private static int MS = 1000, MINUTES = 20;
-	private int ACCEPTABLE_ACCURACY_METERS = 14;
-	private int broadcast_interval = 30 * MINUTES;
-	private Timer broadcast_timer = null;
-	private LocationManager locationManager = null;
-	private Criteria criteria = null;
-	private Handler handler = null;
+	final private static int SECONDS = 1000, MINUTES = 60 * SECONDS;
+	private static final int FASTEST_INTERVAL = 30 * SECONDS;
+	private LocationRequest locationRequest = null;
+	private LocationClient locationClient = null;
 	
 	@Override
 	public IBinder onBind(Intent arg0) {
@@ -38,102 +37,83 @@ public class GpsService extends Service implements LocationListener {
 	@Override
 	public void onCreate() {
 		Log.d(TAG, "onCreate");
-		this.locationManager = (LocationManager)this.getSystemService(Context.LOCATION_SERVICE);
-		this.handler = new Handler();
-		this.setupLocationCriteria();
+		this.locationRequest = new LocationRequest();
+		if (hasFineLocationPermission())
+			this.locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+		else if (hasCoarseLocationPermission())
+			this.locationRequest.setPriority(LocationRequest.PRIORITY_LOW_POWER);
+		else
+			this.locationRequest.setPriority(LocationRequest.PRIORITY_NO_POWER);
+		
+		this.locationRequest.setFastestInterval(FASTEST_INTERVAL);
+		this.locationRequest.setInterval(FASTEST_INTERVAL);
+		this.locationClient = new LocationClient(this, this, this);
 	}
 	
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		Log.d(TAG, "onStartCommand");
 		
-		if (this.checkCallingOrSelfPermission("android.permission.ACCESS_FINE_LOCATION") == PackageManager.PERMISSION_DENIED &&
-			this.checkCallingOrSelfPermission("android.permission.ACCESS_COARSE_LOCATION") == PackageManager.PERMISSION_DENIED) {
-			Log.e(TAG, "Not permitted to perform location updates.");
-			Log.e(TAG, "Add android.permission.ACCESS_FINE_LOCATION or android.permission.ACCESS_COARSE_LOCATION to the Manifest.");
+		if (!hasFineLocationPermission() && !hasCoarseLocationPermission() ||
+				GooglePlayServicesUtil.isGooglePlayServicesAvailable(this) != ConnectionResult.SUCCESS) {
+			Log.e(TAG, getString(R.string.gpsServiceStartError));
 			this.stopSelf();
-		} else {
-			this.configure(intent.getExtras());
+			return START_NOT_STICKY;
+		}
+		
+		if (intent != null) {
+			if (this.locationClient.isConnected() || this.locationClient.isConnecting())
+				this.locationClient.disconnect();
+			
+			Integer broadcast_interval = intent.getIntExtra(BROADCAST_INTERVAL, BROADCAST_INTERVAL_DEFAULT); 
+			this.locationRequest.setInterval(broadcast_interval * MINUTES);
+			
+			this.locationClient.connect();
 		}
 		
 		return START_STICKY;
 	}
 	
-	private void configure(Bundle extras) {
-		this.broadcast_interval = extras.getInt("broadcast_interval", 30) * MINUTES * MS;
-		
-		if (broadcast_timer != null) {
-			this.broadcast_timer.cancel();
-		}
-		
-		this.broadcast_timer = new Timer();
-		
-		this.broadcast_timer.scheduleAtFixedRate(new TimerTask(){
-			public void run() {
-				requestBroadcastGpsPosition();
-			}
-		}, 0, this.broadcast_interval);
-		
-	}
-	
-	private void requestBroadcastGpsPosition() {
-		Log.d(TAG, "requestBroadcastGpsPosition");
-		String provider = this.locationManager.getBestProvider(this.criteria, true);
-		this.locationManager.requestLocationUpdates(provider, 0, 0, this, this.handler.getLooper());
-	}
-	
-	private void setupLocationCriteria() {
-		this.criteria = new Criteria();
-		criteria.setAltitudeRequired(false);
-		criteria.setPowerRequirement(Criteria.POWER_MEDIUM);
-		criteria.setSpeedRequired(true);
-		criteria.setBearingAccuracy(Criteria.ACCURACY_COARSE);
-		criteria.setHorizontalAccuracy(Criteria.ACCURACY_FINE);
-		criteria.setVerticalAccuracy(Criteria.ACCURACY_COARSE);
-		criteria.setSpeedAccuracy(Criteria.ACCURACY_FINE);
-		criteria.setCostAllowed(false);
-		criteria.setBearingRequired(false);
-	}
-	
 	public void onDestroy() {
 		Log.d(TAG, "onDestroy");
+		if (this.locationClient.isConnected()) {
+			this.locationClient.removeLocationUpdates(this);
+		}
+		this.locationClient.disconnect();
 		super.onDestroy();
-		if (this.broadcast_timer != null)
-			this.broadcast_timer.cancel();
-		this.locationManager.removeUpdates(this);
 	}
 
-	public void onLocationChanged(Location location) {
-		Log.d(TAG, "Location changed, accuracy is " + location.getAccuracy());
+	//Google Play Location Services
+	
+	@Override
+	public void onConnected(Bundle dataBundle) {
+		Log.d(TAG, "Play: onConnected");
 		
-		SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yyyy kk:mm:ss z");
-		dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-		String dateString = dateFormat.format(new Date(location.getTime()));
-		Log.d(TAG, "Location changed, time is " + dateString);
-		Log.d(TAG, "Provider is " + location.getProvider());
-		
-		if (this.isLocationGoodEnough(location)) {
-			this.broadcastLocation(location);
-			this.locationManager.removeUpdates(this);
-		}
+		this.locationClient.requestLocationUpdates(this.locationRequest, this);
 	}
 	
-	private boolean isLocationGoodEnough(Location location) {
-		//Just a first approach, definitely needs more thought.
-		if (location.getProvider().contentEquals(LocationManager.GPS_PROVIDER) ||
-			location.getProvider().contentEquals("fused")) {
-			if (location.getAccuracy() < ACCEPTABLE_ACCURACY_METERS) {
-				Log.d(TAG, "Good enough, stop");
-				return true;
-			} else {
-				Log.d(TAG, "Accuracy is " + location.getAccuracy() + ". Waiting for more accuracy.");
-			}
-		} else {
-			Log.d(TAG, "Not from GPS, good enough");
-			Log.d(TAG, "Accuracy is " + location.getAccuracy());
-			return true;
-		}
-		return false;
+	@Override
+	public void onDisconnected() {
+		Log.d(TAG, "Play: onDisconnected");
+	}
+	
+	@Override
+	public void onConnectionFailed(ConnectionResult result) {
+		Log.d(TAG, "Play: onConnectionFailed");
+	}
+	
+	@Override
+    public void onLocationChanged(Location location) {
+        Log.d(TAG, "onLocationChanged " + location.toString());
+        broadcastLocation(location);
+    }
+	
+	private boolean hasFineLocationPermission() {
+		return this.checkCallingOrSelfPermission("android.permission.ACCESS_FINE_LOCATION") == PackageManager.PERMISSION_GRANTED;
+	}
+	
+	private boolean hasCoarseLocationPermission() {
+		return this.checkCallingOrSelfPermission("android.permission.ACCESS_COARSE_LOCATION") == PackageManager.PERMISSION_GRANTED;
 	}
 	
 	private void broadcastLocation(Location location) {
@@ -141,18 +121,6 @@ public class GpsService extends Service implements LocationListener {
 		intent.setAction("me.kaipi.gpsexample.LocationBroadcast");
 		intent.putExtra("location", location);
 		sendBroadcast(intent);
-	}
-	
-	public void onProviderDisabled(String provider) {
-		Log.d(TAG, "Provider disabled " + provider);
-	}
-
-	public void onProviderEnabled(String provider) {
-		Log.d(TAG, "Provider enabled " + provider);
-	}
-
-	public void onStatusChanged(String provider, int status, Bundle extras) {
-		Log.d(TAG, "Status changed " + status);
 	}
 
 }
